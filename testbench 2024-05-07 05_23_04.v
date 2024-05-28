@@ -89,9 +89,13 @@ module testbench;
 		////////////////////////////////////////////////////
 
 		//Signal Initialization
-
-		//Weight insertion
 		
+		//Weight insertion
+		for (i=0; i<5; i+=1) begin
+			#(1*PERIOD) Weight_i <= weight[4-i]; enW_i <= 1'b1;
+		end
+		#(1*PERIOD) Weight_i <= 40'b0; enW_i <= 1'b0;
+
 		//'In' insertion column by column (N data stored in a single vector in 'in_transpose')
 		for (i=0; i<T; i=i+1) begin
 			#(1*PERIOD) In_i <= in_transpose[i]; enI_i <= 1'b1;
