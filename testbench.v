@@ -10,7 +10,7 @@
 
 module testbench;
 
-    reg             CLK, RSTN;
+    reg CLK, RSTN, start;
 
     /// CLOCK Generator ///
     parameter   PERIOD = 10.0;
@@ -42,6 +42,7 @@ module testbench;
 	MatMul	#(N,T) MatMul	(
 		.CLK		(CLK),
 		.RSTN		(RSTN),
+		.start		(start),
 		.Weight_i	(Weight_i),
 		.In_i		(In_i),
 		
@@ -69,7 +70,7 @@ module testbench;
 	//                        (T,1) (T,1) ... (T,N)
 	
 	reg		[5*8-1:0]    weight [0:4];
-	reg		[5*8-1:0]    in_transpose [0:T-1];
+	reg		[5*8-1:0]    in_transpose [0:9];
 	
 	//Do not change the hex file name.
 	initial begin
@@ -81,33 +82,44 @@ module testbench;
 
 	initial begin
 		RSTN <= 1'b0;
-		#(10*PERIOD) RSTN <= 1'b1;
-		#(10*PERIOD) RSTN <= 1'b0;
-		
+        start <= 1'b0;
+        #(10*PERIOD) RSTN <= 1'b1;
+        #(10*PERIOD) RSTN <= 1'b0;
+        
+        // Signal Initialization
+        Weight_i <= 40'b0;
+        In_i <= 40'b0;
+
+        // Start the computation
+        #(2*PERIOD) start <= 1'b1;
+        #(1*PERIOD) start <= 1'b0;
+	
 		////////////////////////////////////////////////////
 		//Write your own testbench to test your module.
 		//Do not manually insert input data (Weight, In) in this space.
 		//Input data should only be inserted by wiring from the hex file mentioned above.
 		////////////////////////////////////////////////////
-
-		//Signal Initialization
-		Weight_i <= 40'b0;
-		In_i <= 40'b0;
-
 		
 		//Weight insertion
-		for (i=0; i<5; i+=1) begin
+		for (i=0; i<5; i = i+1) begin
 			#(1*PERIOD) Weight_i <= weight[i];
 		end
 		#(1*PERIOD) Weight_i <= 40'b0;
 
 		//'In' insertion column by column (N data stored in a single vector in 'in_transpose')
-		for (i=0; i<T; i=i+1) begin
+		for (i=0; i<10; i=i+1) begin
 			#(1*PERIOD) In_i <= in_transpose[i];
 		end
 		#(1*PERIOD) In_i <= 40'b0;		
 
 		#(100*PERIOD);
+		
+		// Check the results
+        $display("OUT_o: %h", OUT_o);
+        $display("VAL_o: %b", VAL_o);
+        $display("OV_o: %b", OV_o);
+
+		#(10*PERIOD);
 		$finish();
 	end
 
