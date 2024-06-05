@@ -5,9 +5,9 @@ module MatMul #(
 (
     input CLK,
     input RSTN,
-    input [39:0] Weight_i,
-    input [39:0] In_i,
-    output reg [79:0] OUT_o,
+    input signed [39:0] Weight_i,
+    input signed [39:0] In_i,
+    output reg signed [79:0] OUT_o,
     output reg VAL_o,
     output reg OV_o
 );
@@ -19,14 +19,16 @@ module MatMul #(
 
     reg [3:0] present_state, next_state;
     reg [3:0] weight_counter, input_counter;
-	reg [5:0] compute_counter;
+	reg [6:0] compute_counter;
 
-    reg [39:0] weight_temp [0:N-1];
-    reg [8*T-1:0] input_temp1, input_temp2, input_temp3, input_temp4, input_temp5;
-    reg [8*(T+4)-1:0] input_reg1, input_reg2, input_reg3, input_reg4, input_reg5;
+    reg signed [39:0] weight_temp [0:4];
+    reg signed [8*T-1:0] input_temp1, input_temp2, input_temp3, input_temp4, input_temp5;
+    reg signed [8*(T+4)-1:0] input_reg1, input_reg2, input_reg3, input_reg4, input_reg5;
+
+	reg signed [7:0] Vin1, Vin2, Vin3, Vin4, Vin5;
 	
-    reg [15:0] partial_sum [0:4];
-    reg [15:0] result1, result2, result3, result4, result5;
+	reg signed [16*(T+4)-1:0] out_temp1, out_temp2, out_temp3, out_temp4, out_temp5;
+	reg signed [16*T-1:0] out_reg1, out_reg2, out_reg3, out_reg4, out_reg5;
  
     always @(posedge CLK or negedge RSTN) begin
         if (!RSTN)
@@ -50,7 +52,7 @@ module MatMul #(
                 else next_state = LOAD_INPUT;
             end
             COMPUTE: begin
-                if (compute_counter == T+20) next_state = IDLE;
+                if (compute_counter == N+T+7) next_state = IDLE;
 				else next_state = COMPUTE;
             end
             default: next_state = IDLE;
@@ -65,16 +67,16 @@ module MatMul #(
         end else begin
             case (present_state)
                 LOAD_WEIGHT: begin
-                    if (weight_counter < N+1) weight_counter <= weight_counter + 1;
+                    if (weight_counter < 6) weight_counter <= weight_counter + 1;
                     else weight_counter <= 0;
                 end
                 LOAD_INPUT: begin
-                    if (input_counter < T+1) input_counter <= input_counter + 1;
+                    if (input_counter < 11) input_counter <= input_counter + 1;
                     else input_counter <= 0;
                 end
                 COMPUTE: begin
-                    if (compute_counter < T+20) compute_counter <= compute_counter + 1;
-                    else compute_counter <= 0;
+                    if (compute_counter < N+T+7) compute_counter <= compute_counter + 1;
+                    else if (compute_counter == N+T+7) compute_counter <= 0;
                 end
             endcase
         end
@@ -82,9 +84,17 @@ module MatMul #(
 	
 	integer i, j;
     always @(posedge CLK) begin
-        if (present_state == LOAD_WEIGHT) begin
-            weight_temp[weight_counter] <= Weight_i;
-        end else if (present_state == LOAD_INPUT) begin
+		if (present_state == IDLE) begin
+			OUT_o <= 0; VAL_o <= 0; OV_o <= 0;
+			weight_temp[0] <= 0; weight_temp[1] <= 0; weight_temp[2] <= 0; weight_temp[3] <= 0; weight_temp[4] <= 0;
+			input_temp1 <= 0; input_temp2 <= 0; input_temp3 <= 0; input_temp4 <= 0; input_temp5 <= 0;
+			input_reg1 <= 0; input_reg2 <= 0; input_reg3 <=0; input_reg4 <= 0; input_reg5 <= 0;
+			Vin1 <= 0; Vin2 <= 0; Vin3 <= 0; Vin4 <= 0; Vin5 <= 0;
+			out_temp1 <= 0; out_temp2 <= 0; out_temp3 <= 0; out_temp4 <= 0; out_temp5 <= 0;
+			out_reg1 <= 0; out_reg2 <= 0; out_reg3 <= 0; out_reg4 <= 0; out_reg5 <= 0;
+		end else if (present_state == LOAD_WEIGHT) begin
+			weight_temp[weight_counter] <= Weight_i;
+		end else if (present_state == LOAD_INPUT) begin
             // input_reg[i][input_counter*8 +: 8] <= In_i[8*i +: 8]; // from LSB to MSB
             input_temp1[8*T-1 - input_counter*8 -: 8] <= In_i[39:32]; // from MSB to LSB
 			input_temp2[8*T-1 - input_counter*8 -: 8] <= In_i[31:24];
@@ -96,15 +106,14 @@ module MatMul #(
 
     always @(posedge CLK) begin
         if (present_state == COMPUTE) begin
-            input_reg1 <= {input_temp1,32'b0}; // Shift input_reg to the right by 8 bits
-			input_reg2 <= {8'b0, input_temp2,24'b0};
-			input_reg3 <= {16'b0, input_temp3, 16'b0};
-			input_reg4 <= {24'b0, input_temp4, 8'b0};
-			input_reg5 <= {32'b0, input_temp5};
+            input_reg1 <= {input_temp1[8*T-1 -: 8*T],32'b0}; // Shift input_reg to the right by 8 bits
+			input_reg2 <= {8'b0, input_temp2[8*T-1 -: 8*T],24'b0};
+			input_reg3 <= {16'b0, input_temp3[8*T-1 -: 8*T], 16'b0};
+			input_reg4 <= {24'b0, input_temp4[8*T-1 -: 8*T], 8'b0};
+			input_reg5 <= {32'b0, input_temp5[8*T-1 -: 8*T]};
         end
     end
 
-    reg [7:0] Vin1, Vin2, Vin3, Vin4, Vin5;
     always @(posedge CLK) begin
         if (present_state == COMPUTE) begin
             Vin1 <= input_reg1[8*(T+4)-1 - (compute_counter-2)*8 -: 8];
@@ -128,12 +137,19 @@ module MatMul #(
     wire [7:0] vin31, vin32, vin33, vin34, vin35;
     wire [7:0] vin41, vin42, vin43, vin44, vin45;
     wire [7:0] vin51, vin52, vin53, vin54, vin55;
+	
+	// Intermediate vertical input wires
+    wire ov11, ov12, ov13, ov14, ov15;
+    wire ov21, ov22, ov23, ov24, ov25;
+    wire ov31, ov32, ov33, ov34, ov35;
+    wire ov41, ov42, ov43, ov44, ov45;
+    wire ov51, ov52, ov53, ov54, ov55;
 
     MAC u11 (.CLK(CLK), .RSTN(RSTN), .Weight(weight_temp[0][39:32]), .In(Vin1), .partial_sum(16'b0), .vertical_out(vin11), .result(acc11));
     MAC u12 (.CLK(CLK), .RSTN(RSTN), .Weight(weight_temp[0][31:24]), .In(Vin2), .partial_sum(acc11), .vertical_out(vin12), .result(acc12));
     MAC u13 (.CLK(CLK), .RSTN(RSTN), .Weight(weight_temp[0][23:16]), .In(Vin3), .partial_sum(acc12), .vertical_out(vin13), .result(acc13));
-    MAC u14 (.CLK(CLK), .RSTN(RSTN), .Weight(weight_temp[0][15:8]), .In(Vin4), .partial_sum(acc13), .vertical_out(vin14),.result(acc14));
-    MAC u15 (.CLK(CLK), .RSTN(RSTN), .Weight(weight_temp[0][7:0]), .In(Vin5), .partial_sum(acc14), .vertical_out(vin15),.result(acc15));
+    MAC u14 (.CLK(CLK), .RSTN(RSTN), .Weight(weight_temp[0][15:8]), .In(Vin4), .partial_sum(acc13), .vertical_out(vin14), .result(acc14));
+    MAC u15 (.CLK(CLK), .RSTN(RSTN), .Weight(weight_temp[0][7:0]), .In(Vin5), .partial_sum(acc14), .vertical_out(vin15), .result(acc15));
 
     MAC u21 (.CLK(CLK), .RSTN(RSTN), .Weight(weight_temp[1][39:32]), .In(vin11), .partial_sum(16'b0), .vertical_out(vin21), .result(acc21));
     MAC u22 (.CLK(CLK), .RSTN(RSTN), .Weight(weight_temp[1][31:24]), .In(vin12), .partial_sum(acc21), .vertical_out(vin22), .result(acc22));
@@ -158,27 +174,61 @@ module MatMul #(
     MAC u53 (.CLK(CLK), .RSTN(RSTN), .Weight(weight_temp[4][23:16]), .In(vin43), .partial_sum(acc52), .vertical_out(vin53), .result(acc53));
     MAC u54 (.CLK(CLK), .RSTN(RSTN), .Weight(weight_temp[4][15:8]), .In(vin44), .partial_sum(acc53), .vertical_out(vin54), .result(acc54));
     MAC u55 (.CLK(CLK), .RSTN(RSTN), .Weight(weight_temp[4][7:0]), .In(vin45), .partial_sum(acc54), .vertical_out(vin55), .result(acc55));
-
-	reg [16*10-1:0] out_temp1, out_temp2, out_temp3, out_temp4, out_temp5;
-	reg [16*5-1:0] out_reg1, out_reg2, out_reg3, out_reg4, out_reg5;
 	
-	reg [3:0] output_cycle;
 	always @(posedge CLK) begin
-		if (!RSTN) begin
-			out_temp1 <= 0; out_temp2 <= 0; out_temp3 <= 0; out_temp4 <= 0; out_temp5 <= 0;
-		end else if (present_state == COMPUTE) begin
-			result1 <= acc15; result2 <= acc25; result3 <= acc35; result4 <= acc45; result5 <= acc55;
+		if (present_state == COMPUTE) begin
 			// store result value to out_temp, out_reg -> print OUT_o
+			case(N) // N = 3 : 6, N = 5 : 9
+				1: begin
+					out_temp1[16*(T+4)-1 - (compute_counter-N-3)*16 -: 16] <= acc11;
+					out_temp2[16*(T+4)-1 - (compute_counter-N-4)*18 -: 16] <= acc21;
+					out_temp3[16*(T+4)-1 - (compute_counter-N-5)*18 -: 16] <= acc31;
+					out_temp4[16*(T+4)-1 - (compute_counter-N-6)*18 -: 16] <= acc41;
+					out_temp5[16*(T+4)-1 - (compute_counter-N-7)*18 -: 16] <= acc51;
+				end
+				2: begin
+					out_temp1[16*(T+4)-1 - (compute_counter-N-3)*16 -: 16] <= acc11;
+					out_temp2[16*(T+4)-1 - (compute_counter-N-4)*16 -: 16] <= acc22;
+					out_temp3[16*(T+4)-1 - (compute_counter-N-5)*16 -: 16] <= acc32;
+					out_temp4[16*(T+4)-1 - (compute_counter-N-6)*16 -: 16] <= acc42;
+					out_temp5[16*(T+4)-1 - (compute_counter-N-7)*16 -: 16] <= acc52;
+				end
+				3: begin
+					out_temp1[16*(T+4)-1 - (compute_counter-N-3)*16 -: 16] <= acc13;
+					out_temp2[16*(T+4)-1 - (compute_counter-N-4)*16 -: 16] <= acc23;
+					out_temp3[16*(T+4)-1 - (compute_counter-N-5)*16 -: 16] <= acc33;
+					out_temp4[16*(T+4)-1 - (compute_counter-N-6)*16 -: 16] <= acc43;
+					out_temp5[16*(T+4)-1 - (compute_counter-N-7)*16 -: 16] <= acc53;
+				end
+				4: begin
+					out_temp1[16*(T+4)-1 - (compute_counter-N-3)*16 -: 16] <= acc14;
+					out_temp2[16*(T+4)-1 - (compute_counter-N-4)*16 -: 16] <= acc24;
+					out_temp3[16*(T+4)-1 - (compute_counter-N-5)*16 -: 16] <= acc34;
+					out_temp4[16*(T+4)-1 - (compute_counter-N-6)*16 -: 16] <= acc44;
+					out_temp5[16*(T+4)-1 - (compute_counter-N-7)*16 -: 16] <= acc54;
+				end
+				5: begin
+					out_temp1[16*(T+4)-1 - (compute_counter-N-3)*16 -: 16] <= acc15;
+					out_temp2[16*(T+4)-1 - (compute_counter-N-4)*16 -: 16] <= acc25;
+					out_temp3[16*(T+4)-1 - (compute_counter-N-5)*16 -: 16] <= acc35;
+					out_temp4[16*(T+4)-1 - (compute_counter-N-6)*16 -: 16] <= acc45;
+					out_temp5[16*(T+4)-1 - (compute_counter-N-7)*16 -: 16] <= acc55;
+				end
+			endcase
 		end
     end
 	
 	always @(posedge CLK) begin
+	
         if (present_state == COMPUTE) begin
-			out_reg1 <= out_temp1[16*9-1 -: 16*5];
-			out_reg2 <= out_temp2[16*8-1 -: 16*5];
-			out_reg3 <= out_temp3[16*7-1 -: 16*5];
-			out_reg4 <= out_temp4[16*6-1 -: 16*5];
-			out_reg5 <= out_temp5[16*5-1 -: 16*5];
+			if(compute_counter >= N+8) begin
+				VAL_o <= 1;
+				OUT_o <= {out_temp1[16*(T+4)-1 - (compute_counter-N-8)*16 -: 16],
+							out_temp2[16*(T+4)-1 - (compute_counter-N-8)*16 -: 16], 
+							out_temp3[16*(T+4)-1 - (compute_counter-N-8)*16 -: 16],
+							out_temp4[16*(T+4)-1 - (compute_counter-N-8)*16 -: 16],
+							out_temp5[16*(T+4)-1 - (compute_counter-N-8)*16 -: 16]};
+			end
 		end
     end
 			
@@ -188,11 +238,7 @@ module MatMul #(
             VAL_o <= 0;
             OV_o <= 0;
         end else if (present_state == COMPUTE) begin
-			for(i = 0; i < 5; i = i + 1) begin
-				OUT_o <= {out_reg1[16*(5-i)]};
-            VAL_o <= 1;
-            OV_o <= 0; // Placeholder for overflow logic, if needed
-			end
+			if(present_state == IDLE) VAL_o <= 0;
 		end
 	end
 endmodule
